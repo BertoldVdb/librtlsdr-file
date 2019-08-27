@@ -8,12 +8,18 @@
 #include <stdio.h>
 #include "rtlfile.h"
 
+static const char* strManufact = "RTLFILE";
+static const char* strProduct = "0";
+static const char* strSerial = "00000";
+
 struct rtlsdr_file {
     FILE* file;
     int timer;
 
     volatile bool stop;
     volatile bool testmode;
+
+    bool loop;
 
     uint32_t rtl_freq;
     uint32_t tuner_freq;
@@ -45,16 +51,16 @@ int rtlsdr_get_device_usb_strings(uint32_t index,
     
     if(index) return -1;
 
-    if(manufact) strcpy(manufact, "RTLFILE");
-    if(product) strcpy(product, "0");
-    if(serial) strcpy(serial, "000000");
+    if(manufact) strcpy(manufact, strManufact);
+    if(product) strcpy(product, strProduct);
+    if(serial) strcpy(serial, strSerial);
 
     return 0;
 }
 
 int rtlsdr_get_index_by_serial(const char *serial){
     if(!serial) return -1;
-    if(!strcmp(serial, "000000")){
+    if(!strcmp(serial, strSerial)){
         return 0;
     }
 
@@ -71,6 +77,11 @@ int rtlsdr_open(rtlsdr_dev_t **dev, uint32_t index){
 
     if(!filename){
         filename = "data.rtl";
+    }
+
+    const char* loop = getenv("LOOP");
+    if(loop){
+        d->loop = atoi(loop);
     }
 
     d->file = fopen(filename, "rb");
@@ -232,9 +243,19 @@ int rtlsdr_reset_buffer(rtlsdr_dev_t *dev){
 }
 
 int rtlsdr_read_sync(rtlsdr_dev_t *dev, void *buf, int len, int *n_read){
+    bool second = false;
+retry:
+
     if(!dev->testmode){
         size_t n = fread(buf, (size_t)len, 1, dev->file);
         if(n == 0){
+            if(dev->loop){
+                rewind(dev->file);
+                if(!second){
+                    second = true;
+                    goto retry;
+                }
+            }
             return -1;
         }
     }else{
